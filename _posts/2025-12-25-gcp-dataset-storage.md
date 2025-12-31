@@ -15,11 +15,11 @@ At the beginning of our project, we trained our models on v4 TPUs and stored our
 
 GCS, unlike persistent disks, charges for stored size and read operations. For our 6.5T dataset, the storage part was $4.3 per day, and the read part was $3.1 per TPU pod. So, in the same example of six parallel runs above, it would cost us $22.9, which is much better.
 
-Storing the dataset on GCS provides two additional benefits. The first one is the ease of data maintenance. Persistent Disks can only be attached in read-only mode to a multi-host TPU pod, so whenever we needed to update the data, we had to detach them from the training pod, attach them to a temporary single-host TPU, perform the update, detach, and attach them to the multi-host TPU again. Second, GCS buckets are per region, for example, us-east5, meaning TPUs in any zone in this region can read from it. Persistent Disks, on the other hand, are per zone, for example, us-east5-a, so if a TPU is in the same region but in a different zone, say us-east5-b, it won’t be able to attach the disk.
+Storing the dataset on GCS provides two additional benefits. The first one is the ease of data maintenance. Persistent Disks can only be attached in read-only mode to a multi-host TPU pod, so whenever we needed to update the data, we had to detach them from the training pod, attach them to a temporary single-host TPU, perform the update, detach, and attach them to the multi-host TPU again. Second, GCS buckets are per region, for example, `us-east5`, meaning TPUs in any zone in this region can read from it. Persistent Disks, on the other hand, are per zone, for example, `us-east5-a`, so if a TPU is in the same region but in a different zone, say `us-east5-b`, it won’t be able to attach the disk.
 
 Our first attempt to read the dataset from the GCS bucket was by attaching it as a filesystem using gcsfuse. It allows using the standard Python filesystem API, and we could reuse our dataloader code with no changes.
 
-When we did a trial run using a single TPU pod, we got a $6.2 increase in “Regional Standard Class B Operations” and a spike of $38.75 in “Regional Standard Class A Operations”. Digging deeper into our usage graphs, we identified three spikes in “ReadObject”, “GetObjectMetadata”, and “ListObjects” requests:
+When we did a trial run using a single TPU pod, we got a $6.2 increase in “Regional Standard Class B Operations” and a spike of $38.75 in “Regional Standard Class A Operations”. Digging deeper into our usage graphs, we identified three spikes in `ReadObject`, `GetObjectMetadata`, and `ListObjects` requests:
 
 ![ReadObject Usage Graph](assets/img/2025-12-25-gcp-dataset-storage/ReadObject_graph.png)
 _ReadObject usage graph_
@@ -30,16 +30,16 @@ _GetObjectMetadata usage graph_
 ![ListObjects Usage Graph](assets/img/2025-12-25-gcp-dataset-storage/ListObjects_graph.png)
 _ListObjects usage graph_
 
-“ReadObject” was expected, but the other two were not. According to this table in the GCS [doc](https://cloud.google.com/storage/pricing?hl=en#operations-by-class):
+`ReadObject` was expected, but the other two were not. According to this table in the GCS [doc](https://cloud.google.com/storage/pricing?hl=en#operations-by-class):
 
 ![Documentation Table](assets/img/2025-12-25-gcp-dataset-storage/doc_table.png)
 _Operations by class_
 
-“ReadObject” is class B, “GetObjectMetadata” is also class B, explaining the double cost of “Regional Standard Class B Operations” from what we estimated, and “ListObjects” is Class A. Class A operations are primarily write operations and cost x12.5 more than Class B, resulting in the significant $38.75 in “Regional Standard Class A Operations”.
+`ReadObject` is class B, `GetObjectMetadata` is also class B, explaining the double cost of “Regional Standard Class B Operations” from what we estimated, and `ListObjects` is Class A. Class A operations are primarily write operations and cost x12.5 more than Class B, resulting in the significant $38.75 in “Regional Standard Class A Operations”.
 
 It turned out that the gcsfuse filesystem is implemented so that it queries the directory list and file metadata every time a file read request is issued. These weren’t needed for our dataloader's functionality, so we set out to find a better solution.
 
-Next, we tried implementing a custom dataloader using [gcsfs](https://github.com/fsspec/gcsfs), a Python library that provides a file-system-like interface to GCS. Although it stopped sending the “ListObjects” requests, it still sent unnecessary “GetObjectMetadata” requests, doubling our Class B operation cost.
+Next, we tried implementing a custom dataloader using [gcsfs](https://github.com/fsspec/gcsfs), a Python library that provides a file-system-like interface to GCS. Although it stopped sending the `ListObjects` requests, it still sent unnecessary `GetObjectMetadata` requests, doubling our Class B operation cost.
 
 Finally, we implemented our dataloader using the [Google Cloud Storage](https://github.com/googleapis/python-storage) library, which provides a dedicated API for interacting with the storage service. We manually download the file from the bucket to a local temporary file using:
 

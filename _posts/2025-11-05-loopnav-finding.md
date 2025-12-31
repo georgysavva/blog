@@ -14,7 +14,7 @@ The problem with recording aligned actions and observations is that actions are 
 
 It seemed like a pretty significant change to the rendering workflow, and to better study this mechanism, I added a debug timestamp recording at the time of action sending in the physics plugin: [commit](https://github.com/Kevin-lkw/mineflayer/compare/fd106c3afd2c66625937d591a2f5853dcd6f8ae9...fa7474e8ccb4d183ba9e698947650004ef63d42d?utm_source=chatgpt.com).
 
-After collecting a test trajectory, I was confused because I saw consecutive frames with almost equal ms times (actionPTime is the timestamp field I added):
+After collecting a test trajectory, I was confused because I saw consecutive frames with almost equal ms times (`actionPTime` is the timestamp field I added):
 
 ```json
    {
@@ -41,11 +41,11 @@ After collecting a test trajectory, I was confused because I saw consecutive fra
   }
 ```
 
-You can see that the ms time almost doesn't change between the first and second frames, but changes between the second and the third. Digging deeper, I found that LoopNav captures actions in the physics module based on the physics tick, which is set to a 50ms constant interval — just like the original screen recording in prismarine-viewer — but also includes an auto-correction with multiple physics updates per tick if the machine runs slower. Here is the Mineflayer physics module [code](https://github.com/PrismarineJS/mineflayer/blob/master/lib/plugins/physics.js#L61-L76) that does it. LoopNav didn’t change this behavior and just hooked up their action sending to it. The autocorrection logic explains the almost equal actionPTime values I saw — these actions got recorded at the same physics tick.
+You can see that the ms time almost doesn't change between the first and second frames, but changes between the second and the third. Digging deeper, I found that LoopNav captures actions in the physics module based on the physics tick, which is set to a `50ms` constant interval — just like the original screen recording in prismarine-viewer — but also includes an auto-correction with multiple physics updates per tick if the machine runs slower. Here is the Mineflayer physics module [code](https://github.com/PrismarineJS/mineflayer/blob/master/lib/plugins/physics.js#L61-L76) that does it. LoopNav didn’t change this behavior and just hooked up their action sending to it. The autocorrection logic explains the almost equal actionPTime values I saw — these actions got recorded at the same physics tick.
 
 ## The action-observation delay issue
 
-This got me thinking. If action recording and frame rendering are decoupled in LoopNav's implementation and action recording is kept at a constant rate of 1 action per 50ms via auto-correction, there is no guarantee that the prismarine-viewer listener can process the action events at the same 50ms frequency. In other words, the event queue publisher could have a higher throughput than the listener, leading to the observation rendering process lagging behind the action-producing process. To test it out, I added a renderPTime field with the timestamp at the time of rendering for the corresponding action in prismarine-viewer:
+This got me thinking. If action recording and frame rendering are decoupled in LoopNav's implementation and action recording is kept at a constant rate of 1 action per 50ms via auto-correction, there is no guarantee that the prismarine-viewer listener can process the action events at the same `50ms` frequency. In other words, the event queue publisher could have a higher throughput than the listener, leading to the observation rendering process lagging behind the action-producing process. To test it out, I added a `renderPTime` field with the timestamp at the time of rendering for the corresponding action in prismarine-viewer:
 
 ```json
 [
@@ -112,7 +112,7 @@ This got me thinking. If action recording and frame rendering are decoupled in L
 ]
 ```
 
-The average time between consecutive renderPTime, i.e., the frequency at which the prismarine-viewer processes action events, was 70ms in my case. As the trajectory progressed into later frames (frame_count > 400), the time difference between when the action was sent from Mineflayer’s physics module and when the frame was rendered in prismarine-viewer reached around `7.5s`. This means that at the time of screen rendering, the action we assign to it as a pair is not the one that was just applied in the physics module, but the one 7.5s into the past.
+The average time between consecutive `renderPTime`, i.e., the frequency at which the prismarine-viewer processes action events, was `70ms` in my case. As the trajectory progressed into later frames (`frame_count` > 400), the time difference between when the action was sent from Mineflayer’s physics module and when the frame was rendered in prismarine-viewer reached around 7.5s. This means that at the time of screen rendering, the action we assign to it as a pair is not the one that was just applied in the physics module, but the one 7.5s into the past.
 
 ## Movement-based experiment
 
