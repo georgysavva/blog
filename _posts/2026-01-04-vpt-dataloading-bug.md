@@ -1,5 +1,5 @@
 ---
-title: VPT action data loading bug
+title: VPT actions data loading bug
 date: 2026-01-04 14:10:00 -0500
 render_with_liquid: true
 ---
